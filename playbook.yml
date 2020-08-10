@@ -1,0 +1,150 @@
+---
+ - name: Installing zabbix server
+   hosts: amazon_aws
+   become: true
+
+
+   tasks:
+
+
+
+    - name: Install a .deb package
+      apt:
+        deb: https://repo.zabbix.com/zabbix/5.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_5.0-1+bionic_all.deb
+
+
+
+    - name: Update and upgrade apt packages
+      become: true
+      apt:
+       upgrade: yes
+       update_cache: yes
+       cache_valid_time: 86400 #One da
+    
+
+
+    - name: Install packages
+      apt:
+        name: "{{ item }}"
+        state: latest
+      loop:
+         - apache2
+         - libapache2-mod-php
+         - mysql-server
+         - php
+         - php-mbstring
+         - php-gd
+         - php-xml
+         - php-bcmath
+         - php-ldap
+         - php-mysql
+         - python3-pip
+
+    - name: Make sure pymysql is present
+      pip:
+       name: pymysql
+       state: present
+
+
+    - name: Install zabbix packages
+      apt:
+       name: "{{ item }}"
+       state: latest
+      loop:
+         - zabbix-server-mysql
+         - zabbix-frontend-php
+         - zabbix-agent
+         - zabbix-apache-conf    
+
+
+    - name: Ansible delete file php.ini
+      file:
+       path:  /etc/php/7.2/apache2/php.ini
+       state: absent
+
+
+    - name: Copy php.ini
+      copy:
+        src:  /etc/ansible/php.ini
+        dest: /etc/php/7.2/apache2
+        
+
+
+    - name: create database
+      mysql_db:
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        name: zabbixdb
+        collation: utf8_unicode_ci
+        encoding: utf8
+        state: present
+    
+    - name: Create database user with name 'zabbix' and password '12345' with all database privileges
+      mysql_user:
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        name: zabbix
+        password: 12345
+        priv: '*.*:ALL'
+        state: present
+
+
+
+#    - name: Extract create.sql.gz
+#      command: 'gunzip /usr/share/doc/zabbix-server-mysql/create.sql.gz'
+#
+#
+#    - name: Import create.sql to mysql
+#      mysql_db:
+#        login_unix_socket: /var/run/mysqld/mysqld.sock
+#        state: import
+#        name: zabbixdb
+#        target: /usr/share/doc/zabbix-server-mysql/create.sql
+
+   
+    - name: Add DBHost MySQL
+      lineinfile:
+       state=present
+       dest=/etc/zabbix/zabbix_server.conf
+       regexp=^DBHost=
+       line=DBHost=localhost
+       insertafter='# DBHost='
+    
+    - name: Add DBName
+      lineinfile:
+       state=present
+       dest=/etc/zabbix/zabbix_server.conf
+       regexp=^DBName=
+       line=DBName=zabbixdb
+    
+    - name: Add DBUser
+      lineinfile:
+       state=present
+       dest=/etc/zabbix/zabbix_server.conf
+       regexp=^DBUser=
+       line=DBUser=zabbix
+
+
+    - name: Add DBPassword
+      lineinfile:
+       state=present
+       dest=/etc/zabbix/zabbix_server.conf
+       regexp=^DBPassword=
+       line=DBPassword=12345
+       insertafter='# DBPassword='
+
+
+
+    - name: restart zabbix and apache2
+      service:
+       name: "{{ item }}"
+       state: restarted
+      loop:
+       - zabbix-server
+       - apache2
+    
+    - name: Enable service httpd, and not touch the state
+      service:
+        name: zabbix-server
+        enabled: yes
+   
+
+
